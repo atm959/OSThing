@@ -14,5 +14,3 @@ detectDrive:
 .driveIsInvalid:
     mov al, 0FFh        ;No drives exist(?)
     ret
-
-initDrive:
