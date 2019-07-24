@@ -505,11 +505,6 @@ void kernelMain(){
         }
     }
 
-    mouse_time--;
-    if(mouse_time == 0){
-        mouse_install();
-    }
-
     while(1){
         renderImage(pointerX, pointerY, 8, 8, pointerImage);
     }
