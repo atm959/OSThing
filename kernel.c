@@ -7,23 +7,19 @@ bool enableMouseHandler = false;
 unsigned int pointerX, pointerY;
 bool mouseClicked = false;
 
-char tempVidBuffer[320 * 200];
+#define VIDEO_WIDTH 320
+#define VIDEO_HEIGHT 200
+
+char tempVidBuffer[VIDEO_WIDTH * VIDEO_HEIGHT];
 
 void copyTempBufferToGPUBuffer(){
     char* videoMemory = (char*)0xA0000;
-    for(int i = 0; i < 320 * 200; i++){
+    for(int i = 0; i < VIDEO_WIDTH * VIDEO_HEIGHT; i++){
         videoMemory[i] = tempVidBuffer[i];
     }
 }
 
-struct Button {
-    unsigned int x, y;
-};
-
-struct Button buttons[5*5];
-
-int draggedButton;
-bool buttonBeingDragged = false;
+int winX, winY;
 
 char pointerImage[8 * 8] = {
     0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
@@ -51,30 +47,32 @@ void renderImage(int x, int y, int imageWidth, int imageHeight, char* image){
         for(int j = 0; j < imageHeight; j++){
             char pixel = image[(j * imageWidth) + i];
             if(pixel != 0x00){
-                tempVidBuffer[((y + j) * 320) + (x + i)] = pixel - 1;
+                tempVidBuffer[((y + j) * VIDEO_WIDTH) + (x + i)] = pixel - 1;
             }
         }
     }
 }
 
+/*
 void renderButton(struct Button button){
     for(int i = 0; i < 32; i++){
         for(int j = 0; j < 16; j++){
-            tempVidBuffer[((button.y + j) * 320) + (button.x + i)] = 0x08; //Put the rectangle in video memory
+            tempVidBuffer[((button.y + j) * VIDEO_WIDTH) + (button.x + i)] = 0x08; //Put the rectangle in video memory
         }
     }
 
     for(int i = 0; i < 33; i++){
-        tempVidBuffer[(button.y * 320) + (button.x + i)] = 0x00; //Top border
-        tempVidBuffer[((button.y + 16) * 320) + (button.x + i)] = 0x00; //Bottom border
-        tempVidBuffer[((button.y + 17) * 320) + (button.x + i + 1)] = 0x13; //Bottom shadow
+        tempVidBuffer[(button.y * VIDEO_WIDTH) + (button.x + i)] = 0x00; //Top border
+        tempVidBuffer[((button.y + 16) * VIDEO_WIDTH) + (button.x + i)] = 0x00; //Bottom border
+        tempVidBuffer[((button.y + 17) * VIDEO_WIDTH) + (button.x + i + 1)] = 0x13; //Bottom shadow
     }
     for(int i = 0; i < 17; i++){
-        tempVidBuffer[((button.y + i) * 320) + button.x] = 0x00; //Left border
-        tempVidBuffer[((button.y + i) * 320) + (button.x + 32)] = 0x00; //Right border
-        tempVidBuffer[((button.y + i + 1) * 320) + (button.x + 33)] = 0x13; //Right shadow
+        tempVidBuffer[((button.y + i) * VIDEO_WIDTH) + button.x] = 0x00; //Left border
+        tempVidBuffer[((button.y + i) * VIDEO_WIDTH) + (button.x + 32)] = 0x00; //Right border
+        tempVidBuffer[((button.y + i + 1) * VIDEO_WIDTH) + (button.x + 33)] = 0x13; //Right shadow
     }
 }
+*/
 
 inline void outb(short port, char val) {
     asm volatile ( "outb %0, %1" : : "a"(val), "Nd"(port) );
@@ -354,40 +352,8 @@ void irq12_handler(void) { //IRQ 12 - Mouse and Keyboard?
 
                 if(pointerX & 0xF0000000) pointerX = 0;
                 if(pointerY & 0xF0000000) pointerY = 0;
-                if(pointerX > (320 - 8)) pointerX = (320 - 8);
-                if(pointerY > (200 - 8)) pointerY = (200 - 8);
-
-                if(buttonBeingDragged){
-                    buttons[draggedButton].x += mouse_x;
-                    buttons[draggedButton].y -= mouse_y;
-
-                    if(buttons[draggedButton].x & 0xF0000000) buttons[draggedButton].x = 0;
-                    if(buttons[draggedButton].y & 0xF0000000) buttons[draggedButton].y = 0;
-                    if(buttons[draggedButton].x > (320 - 34)) buttons[draggedButton].x = (320 - 34);
-                    if(buttons[draggedButton].y > (200 - 18)) buttons[draggedButton].y = (200 - 18);
-                }
-
-                mouseClicked = mouse_byte[0] & 0x01;
-
-                if(mouseClicked){
-                    if(!buttonBeingDragged){
-                        for(int i = 0; i < (5*5); i++){
-                            if(pointerX > buttons[i].x){
-                                if(pointerX < (buttons[i].x + 32)){
-                                    if(pointerY > buttons[i].y){
-                                        if(pointerY < (buttons[i].y + 16)){
-                                            draggedButton = i;
-                                            buttonBeingDragged = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    buttonBeingDragged = false;
-                }
+                if(pointerX > (VIDEO_WIDTH - 8)) pointerX = (VIDEO_WIDTH - 8);
+                if(pointerY > (VIDEO_HEIGHT - 8)) pointerY = (VIDEO_HEIGHT - 8);
 
                 mouse_cycle=0;
 
@@ -492,6 +458,67 @@ void mouse_install() {
   enableMouseHandler = true;
 }
 
+void renderPointerEditor(){
+    int k = 0;
+
+    for(int x = 0; x < 64; x++){
+        for(int y = 0; y < 64; y++){
+            tempVidBuffer[((y + winY + 1) * VIDEO_WIDTH) + (x + winX + 1)] = (((x / 2) + (y / 2)) % 2) ? 0x0F : 0x17;
+        }
+    }
+
+    for(int x = 0; x < 8; x++){
+        for(int y = 0; y < 8; y++){
+            char pixel = pointerImage[(y * 8) + x];
+            if(pixel != 0x00){
+                for(int i = 0; i < 8; i++){
+                    for(int j = 0; j < 8; j++){
+                        tempVidBuffer[(((j + (y * 8)) + winY + 1) * VIDEO_WIDTH) + ((i + (x * 8)) + winX + 1)] = pixel - 1; //Draw the large mouse pointer
+                    }
+                }
+            }
+        }
+    }
+
+    k = 0;
+    for(int x = 0; x < 8; x++){
+        for(int y = 0; y < 64; y++){
+            tempVidBuffer[((y + winY + 1) * VIDEO_WIDTH) + ((x * 8) + winX + 1)] = (k % 2) ? 0x00 : 0x0F;
+            k++;
+        }
+    }
+    k = 0;
+    for(int x = 0; x < 64; x++){
+        for(int y = 0; y < 8; y++){
+            tempVidBuffer[(((y * 8) + winY + 1) * VIDEO_WIDTH) + (x + winX + 1)] = (k % 2) ? 0x00 : 0x0F;
+        }
+        k++;
+    }
+
+    k = 0;
+    for(int y = 0; y < 16; y++){
+        for(int x = 0; x < 16; x++){
+            for(int i = 0; i < 8; i++){
+                for(int j = 0; j < 8; j++){
+                    tempVidBuffer[(((y * 8) + winY + 1 + j) * VIDEO_WIDTH) + ((x * 8) + winX + 64 + 2 + i)] = k - 1;
+                }
+            }
+            k++;
+        }
+    }
+
+    for(int x = 0; x < 8; x++){
+        for(int y = 0; y < 8; y++){
+            tempVidBuffer[((y + winY + 1) * VIDEO_WIDTH) + (x + winX + 64 + 2)] = (((x / 2) + (y / 2)) % 2) ? 0x0F : 0x17;
+        }
+    }
+
+    for(int x = 0; x < (128 + 64 + 2); x++){
+        tempVidBuffer[(winY * VIDEO_WIDTH) + (winX + x)] = 0x00;
+        tempVidBuffer[((winY + 128) * VIDEO_WIDTH) + (winX + x)] = 0x00;
+    }
+}
+
 void kernelMain(){
     idt_init();
 
@@ -499,37 +526,17 @@ void kernelMain(){
 
     enableMouseHandler = true;
 
-    int k = 0;
-    for(int x = 0; x < 5; x++){
-        for(int y = 0; y < 5; y++){
-            buttons[k] = (struct Button){(x * 33) + 64, (y * 17) + 64};
-            k++;
-        }
-    }
-
     while(1){
-        for(int x = 0; x < 320; x++){
-            for(int y = 0; y < 200; y++){
-                tempVidBuffer[(y * 320) + x] = 0x0F; //Fill the background with white
+        winX = 32;
+        winY = 32;
+
+        for(int x = 0; x < VIDEO_WIDTH; x++){
+            for(int y = 0; y < VIDEO_HEIGHT; y++){
+                tempVidBuffer[(y * VIDEO_WIDTH) + x] = 0x0F; //Fill the background with white
             }
-        }
-        
-        for(int i = 0; i < (5*5); i++){
-            renderButton(buttons[i]); //ALL THE BUTTONS
         }
 
-        for(int x = 0; x < 8; x++){
-            for(int y = 0; y < 8; y++){
-                char pixel = pointerImage[(y * 8) + x];
-                if(pixel != 0x00){
-                    for(int i = 0; i < 8; i++){
-                        for(int j = 0; j < 8; j++){
-                            tempVidBuffer[((j + (y * 8)) * 320) + (i + (x * 8))] = pixel - 1; //Draw the large mouse pointer
-                        }
-                    }
-                }
-            }
-        }
+        renderPointerEditor();
 
         if(mouseClicked){
             renderImage(pointerX, pointerY, 8, 8, pointerImageClicked);
@@ -540,3 +547,5 @@ void kernelMain(){
         copyTempBufferToGPUBuffer();
     }
 }
+
+void dummyFunc(){}

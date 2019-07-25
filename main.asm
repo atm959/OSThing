@@ -33,7 +33,7 @@ start:
 
 	mov ah, 00h
 	mov al, 13h
-	int 10h	;Graphics mode 13h (VGA 320x200)
+	int 10h	;Graphics mode 13h (VGA 256-col. 320x200)
 	
 	xor ax, ax
 	push ax
@@ -246,6 +246,8 @@ load_idt:
 	lidt [edx]
 	sti
 	ret
+
+extern dummyFunc
 	
 SECTION .bss
 ALIGN 4
