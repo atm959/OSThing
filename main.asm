@@ -246,8 +246,6 @@ load_idt:
 	lidt [edx]
 	sti
 	ret
-
-extern dummyFunc
 	
 SECTION .bss
 ALIGN 4

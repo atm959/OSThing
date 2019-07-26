@@ -20,6 +20,7 @@ void copyTempBufferToGPUBuffer(){
 }
 
 int winX, winY;
+char selectedCol;
 
 char pointerImage[8 * 8] = {
     0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
@@ -355,6 +356,8 @@ void irq12_handler(void) { //IRQ 12 - Mouse and Keyboard?
                 if(pointerX > (VIDEO_WIDTH - 8)) pointerX = (VIDEO_WIDTH - 8);
                 if(pointerY > (VIDEO_HEIGHT - 8)) pointerY = (VIDEO_HEIGHT - 8);
 
+                mouseClicked = mouse_byte[0] & 1;
+
                 mouse_cycle=0;
 
             break;
@@ -461,6 +464,7 @@ void mouse_install() {
 void renderPointerEditor(){
     int k = 0;
 
+    //The "transparent checker" behind the large pointer
     for(int x = 0; x < 64; x++){
         for(int y = 0; y < 64; y++){
             tempVidBuffer[((y + winY + 1) * VIDEO_WIDTH) + (x + winX + 1)] = (((x / 2) + (y / 2)) % 2) ? 0x0F : 0x17;
@@ -480,6 +484,7 @@ void renderPointerEditor(){
         }
     }
 
+    //The pixel borders over the large pointer
     k = 0;
     for(int x = 0; x < 8; x++){
         for(int y = 0; y < 64; y++){
@@ -495,6 +500,7 @@ void renderPointerEditor(){
         k++;
     }
 
+    //The color palette
     k = 0;
     for(int y = 0; y < 16; y++){
         for(int x = 0; x < 16; x++){
@@ -507,15 +513,29 @@ void renderPointerEditor(){
         }
     }
 
+    //The "transparent checker" on color 0 in the color palette
     for(int x = 0; x < 8; x++){
         for(int y = 0; y < 8; y++){
             tempVidBuffer[((y + winY + 1) * VIDEO_WIDTH) + (x + winX + 64 + 2)] = (((x / 2) + (y / 2)) % 2) ? 0x0F : 0x17;
         }
     }
 
+    //The "window border"
     for(int x = 0; x < (128 + 64 + 2); x++){
         tempVidBuffer[(winY * VIDEO_WIDTH) + (winX + x)] = 0x00;
-        tempVidBuffer[((winY + 128) * VIDEO_WIDTH) + (winX + x)] = 0x00;
+        tempVidBuffer[((winY + 128 + 1) * VIDEO_WIDTH) + (winX + x)] = 0x00;
+    }
+    for(int y = 0; y < (128 + 2); y++){
+        tempVidBuffer[((winY + y) * VIDEO_WIDTH) + winX] = 0x00;
+        tempVidBuffer[((winY + y) * VIDEO_WIDTH) + (winX + 64 + 128 + 2)] = 0x00;
+    }
+
+    //The box around the selected color
+    for(int x = 0; x < 8; x++){
+        //tempVidBuffer[(((winY + 1) + ((selectedCol / 16) * 8)) * VIDEO_WIDTH) + 
+    }
+    for(int y = 0; y < 8; y++){
+
     }
 }
 
@@ -529,6 +549,7 @@ void kernelMain(){
     while(1){
         winX = 32;
         winY = 32;
+        selectedCol++;
 
         for(int x = 0; x < VIDEO_WIDTH; x++){
             for(int y = 0; y < VIDEO_HEIGHT; y++){
@@ -547,5 +568,3 @@ void kernelMain(){
         copyTempBufferToGPUBuffer();
     }
 }
-
-void dummyFunc(){}
