@@ -92,6 +92,7 @@ loadLocation:
 	cli
 	hlt
 
+global divByZero
 global irq0
 global irq1
 global irq2
@@ -110,7 +111,8 @@ global irq14
 global irq15
  
 global load_idt
- 
+
+global divByZero_handler
 global irq0_handler
 global irq1_handler
 global irq2_handler
@@ -127,7 +129,8 @@ global irq12_handler
 global irq13_handler
 global irq14_handler
 global irq15_handler
- 
+
+extern divByZero_handler
 extern irq0_handler
 extern irq1_handler
 extern irq2_handler
@@ -144,7 +147,13 @@ extern irq12_handler
 extern irq13_handler
 extern irq14_handler
 extern irq15_handler
- 
+
+divByZero:
+	pusha
+	call divByZero_handler
+	popa
+	iret
+
 irq0:
   pusha
   call irq0_handler

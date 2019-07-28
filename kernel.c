@@ -43,6 +43,8 @@ char pointerImageClicked[8 * 8] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00
 };
 
+char dataThingy[512 * 256];
+
 void renderImage(int x, int y, int imageWidth, int imageHeight, char* image){
     for(int i = 0; i < imageWidth; i++){
         for(int j = 0; j < imageHeight; j++){
@@ -91,6 +93,22 @@ inline char inb(short port){
     return ret;
 }
 
+inline short ins(short port){
+    short ret;
+    asm volatile ( "inw %1, %0"
+                   : "=a"(ret)
+                   : "Nd"(port) );
+    return ret;
+}
+
+inline void outs(short port, short val) {
+    asm volatile ( "outw %0, %1" : : "a"(val), "Nd"(port) );
+    /* There's an outb %al, $imm8  encoding, for compile-time constant port numbers that fit in 8b.  (N constraint).
+     * Wider immediate constants would be truncated at assemble-time (e.g. "i" constraint).
+     * The  outb  %al, %dx  encoding is the only option for all other cases.
+     * %1 expands to %dx because  port  is a uint16_t.  %w1 could be used if we had the port number a wider C type */
+}
+
 struct IDT_Entry {
     unsigned short int offset_lowerbits;
     unsigned short int selector;
@@ -103,6 +121,7 @@ struct IDT_Entry IDT[256];
 
 void idt_init(){
     extern int load_idt();
+    extern int divByZero();
     extern int irq0();
     extern int irq1();
     extern int irq2();
@@ -120,6 +139,7 @@ void idt_init(){
     extern int irq14();
     extern int irq15();
 
+    unsigned long divByZero_address;
     unsigned long irq0_address;
     unsigned long irq1_address;
     unsigned long irq2_address;
@@ -150,6 +170,13 @@ void idt_init(){
     outb(0xA1, 0x01);
     outb(0x21, 0x0);
     outb(0xA1, 0x0);
+
+    divByZero_address = (unsigned long)divByZero;
+    IDT[0].offset_lowerbits = divByZero_address & 0xFFFF;
+    IDT[0].selector = 0x08;
+    IDT[0].zero = 0;
+    IDT[0].type_attr = 0x8E;
+    IDT[0].offset_higherbits = (divByZero_address & 0xFFFF0000) >> 16;
 
     irq0_address = (unsigned long)irq0; 
 	IDT[32].offset_lowerbits = irq0_address & 0xffff;
@@ -269,6 +296,18 @@ void idt_init(){
 	idt_ptr[1] = idt_address >> 16 ;
  
 	load_idt(idt_ptr);
+}
+
+void divByZero_handler(void){
+    outb(0x20, 0x20);
+
+    for(int i = 0; i < (320 * 200); i++){
+        tempVidBuffer[i] = 0x04;
+    }
+
+    copyTempBufferToGPUBuffer();
+
+    while(true){}
 }
 
 void irq0_handler(void) {
@@ -473,7 +512,7 @@ void renderPointerEditor(){
 
     for(int x = 0; x < 8; x++){
         for(int y = 0; y < 8; y++){
-            char pixel = pointerImage[(y * 8) + x];
+            char pixel = pointerImageClicked[(y * 8) + x];
             if(pixel != 0x00){
                 for(int i = 0; i < 8; i++){
                     for(int j = 0; j < 8; j++){
@@ -535,8 +574,107 @@ void renderPointerEditor(){
         //tempVidBuffer[(((winY + 1) + ((selectedCol / 16) * 8)) * VIDEO_WIDTH) + 
     }
     for(int y = 0; y < 8; y++){
+        
+    }
+}
+
+bool detectDrive(){
+    char val = inb(0x1F7);
+    if(val & 0xFF) return false;
+    return true;
+}
+
+int sectorCount;
+
+bool initAndIdentifyDrive(){
+    outb(0x1F6, 0xA0); //Select the master drive on the primary bus
+
+    outb(0x1F2, 0); //Sectorcount
+    outb(0x1F3, 0); //LBAlo
+    outb(0x1F4, 0); //LBAmod
+    outb(0x1F5, 0); //LBAhi
+
+    outb(0x1F7, 0xEC); //IDENTIFY command
+
+    char val = inb(0x1F7);
+    if(val == 0) return false;
+
+    while(inb(0x1F7) & 0x80){}
+
+    if((inb(0x1F4) != 0) || (inb(0x1F5) != 0)) return false;
+
+    while(!(val & 0x08) && !(val & 0x01)){
+        val = inb(0x1F7);
+    }
+
+    if(val & 0x01) return false;
+
+    for(int i = 0; i < 256; i++){
+        dataThingy[i] = inb(0x1F0);
+    }
+
+    sectorCount = (dataThingy[60] << 16) | dataThingy[61];
+
+    return true;
+}
+
+bool read256Sectors(int sector){
+    outb(0x1F6, (0xE0 | (unsigned char)(sector >> 24)) | 0x40);
+    
+    outb(0x1F2, 0);
+    outb(0x1F3, (unsigned char) sector);
+    outb(0x1F4, (unsigned char) sector >> 8);
+    outb(0x1F5, (unsigned char) sector >> 16);
+
+    outb(0x1F7, 0x20); //READ SECTORS
+
+    char val = inb(0x1F7);
+
+    while((val & 0x80) || !(val & 0x08)){
+        val = inb(0x1F7);
+        if((val & 0x01) || (val & 0x20)) return false;
+    }
+
+    for(int i = 0; i < 256 * 256; i++){
+        short val = ins(0x1F0);
+        dataThingy[(512 * sector) + (i * 2)] = (val & 0xFF00) >> 8;
+        dataThingy[(512 * sector) + ((i * 2) + 1)] = val & 0x00FF;
+    }
+
+    return true;
+}
+
+bool write256Sectors(int sector){
+    outb(0x1F6, (0xE0 | (unsigned char)(sector >> 24)) | 0x40);
+    
+    outb(0x1F2, 0);
+    outb(0x1F3, (unsigned char) sector);
+    outb(0x1F4, (unsigned char) sector >> 8);
+    outb(0x1F5, (unsigned char) sector >> 16);
+
+    outb(0x1F7, 0x30); //WRITE SECTORS
+
+    char val = inb(0x1F7);
+
+    while((val & 0x80) || !(val & 0x08)){
+        val = inb(0x1F7);
+        if((val & 0x01) || (val & 0x20)) return false;
+    }
+
+    for(int i = 0; i < 256 * 256; i++){
+        short valToWrite;
+        valToWrite = (0xFF00 | 0xEE);
+        outs(0x1F0, valToWrite);
+
+        outb(0x1F7, 0xE7); //FLUSH CACHE
+        while((val & 0x80) || !(val & 0x08)){
+            val = inb(0x1F7);
+            if((val & 0x01) || (val & 0x20)) return false;
+        }
 
     }
+
+    return true;
 }
 
 void kernelMain(){
@@ -545,6 +683,21 @@ void kernelMain(){
     mouse_install();
 
     enableMouseHandler = true;
+
+    bool good = initAndIdentifyDrive();
+    if(!good){
+        for(int i = 0; i < 256; i++){
+            dataThingy[i] = 0x04;
+        }
+    }
+    good = read256Sectors(0);
+
+    for(int i = 0; i < 512 * 256; i++){
+        //dataThingy[i] = i % 256;
+    }
+
+    //good = write256Sectors(0);
+
 
     while(1){
         winX = 32;
@@ -558,6 +711,11 @@ void kernelMain(){
         }
 
         renderPointerEditor();
+
+        renderImage(8, 8, 512 * 8, 1, dataThingy);
+
+        int j = 0;
+        int i = 3 / j; //Doesn't work for some reason, the OS continues to work
 
         if(mouseClicked){
             renderImage(pointerX, pointerY, 8, 8, pointerImageClicked);
