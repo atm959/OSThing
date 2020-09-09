@@ -6,7 +6,8 @@
 *.img
 *.bin
 *.o
-*.bin2h.exe
+bin2h.exe
+log.txt
 
 # Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
 # should NOT be excluded as they contain compiler settings and other important
