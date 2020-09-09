@@ -15,7 +15,7 @@ start:
 	mov al, 01h
 	mov bh, 00h
 	mov bl, 0Fh
-	mov cx, 0Ah
+	mov cx, loadingEnd-loading
 	mov dh, 00h
 	mov dl, 00h
 	mov bp, loading
@@ -24,16 +24,18 @@ start:
 	mov dl, [drive]
 	
 	mov ah, 02h
-	mov al, 10
+	mov al, 63
 	mov ch, 0
 	mov dh, 0
 	mov cl, 2
 	mov bx, loadLocation
 	int 13h ;Load from disk
 
+	jc .loadFailed
+
 	mov ah, 00h
 	mov al, 13h
-	int 10h	;Graphics mode 13h (VGA 256-col. 320x200)
+	int 10h
 	
 	xor ax, ax
 	push ax
@@ -45,8 +47,26 @@ start:
 	mov cr0, eax
 	jmp 08h:protectedModeBegin
 
+.loadFailed:
+	mov ah, 13h
+	mov al, 01h
+	mov bh, 00h
+	mov bl, 0Fh
+	mov cx, couldNotLoadEnd-couldNotLoad
+	mov dh, 01h
+	mov dl, 00h
+	mov bp, couldNotLoad
+	int 10h
+
+	jmp halt
+
 loading:
-	db "Loading...", 0
+	db "Loading..."
+loadingEnd:
+
+couldNotLoad:
+	db "Couldn't load... (Not booting from floppy disk?)"
+couldNotLoadEnd:
 	
 drive: db 0
 
@@ -89,10 +109,10 @@ loadLocation:
 	mov esp, kernelStackTop
 	extern kernelMain
 	call kernelMain
-	cli
+	sti
 	hlt
 
-global divByZero
+global zeroDivide
 global irq0
 global irq1
 global irq2
@@ -109,50 +129,32 @@ global irq12
 global irq13
 global irq14
 global irq15
+
+extern irq0_handler
  
 global load_idt
 
-global divByZero_handler
-global irq0_handler
-global irq1_handler
-global irq2_handler
-global irq3_handler
-global irq4_handler
-global irq5_handler
-global irq6_handler
-global irq7_handler
-global irq8_handler
-global irq9_handler
-global irq10_handler
-global irq11_handler
-global irq12_handler
-global irq13_handler
-global irq14_handler
-global irq15_handler
+extern clearScreen
+extern placeText
 
-extern divByZero_handler
-extern irq0_handler
-extern irq1_handler
-extern irq2_handler
-extern irq3_handler
-extern irq4_handler
-extern irq5_handler
-extern irq6_handler
-extern irq7_handler
-extern irq8_handler
-extern irq9_handler
-extern irq10_handler
-extern irq11_handler
-extern irq12_handler
-extern irq13_handler
-extern irq14_handler
-extern irq15_handler
+zeroDivideText:
+	db "DIVIDE-BY-ZERO EXCEPTION", 0
 
-divByZero:
-	pusha
-	call divByZero_handler
-	popa
-	iret
+zeroDivide:
+	call copyState
+	call clearScreen
+	call dumpState
+	push DWORD 0Ch
+	push DWORD 0
+	push DWORD 0
+	mov eax, zeroDivideText
+	push eax
+	call placeText
+	pop eax
+	pop eax
+	pop eax
+	pop eax
+	jmp halt
 
 irq0:
   pusha
@@ -162,93 +164,242 @@ irq0:
  
 irq1:
   pusha
-  call irq1_handler
+
   popa
   iret
  
 irq2:
   pusha
-  call irq2_handler
+  
   popa
   iret
  
 irq3:
   pusha
-  call irq3_handler
+  
   popa
   iret
  
 irq4:
   pusha
-  call irq4_handler
+  
   popa
   iret
  
 irq5:
   pusha
-  call irq5_handler
+  
   popa
   iret
  
 irq6:
   pusha
-  call irq6_handler
+  
   popa
   iret
  
 irq7:
   pusha
-  call irq7_handler
+  
   popa
   iret
  
 irq8:
   pusha
-  call irq8_handler
+  
   popa
   iret
  
 irq9:
   pusha
-  call irq9_handler
+  
   popa
   iret
  
 irq10:
   pusha
-  call irq10_handler
+  
   popa
   iret
  
 irq11:
   pusha
-  call irq11_handler
+  
   popa
   iret
  
 irq12:
   pusha
-  call irq12_handler
+  
   popa
   iret
  
 irq13:
   pusha
-  call irq13_handler
+  
   popa
   iret
  
 irq14:
   pusha
-  call irq14_handler
+  
   popa
   iret
  
 irq15:
   pusha
-  call irq15_handler
+  
   popa
   iret
+
+global halt
+
+halt:
+	cli
+	hlt
+
+eaxRAM: dd 0
+ebxRAM: dd 0
+ecxRAM: dd 0
+edxRAM: dd 0
+espRAM: dd 0
+
+copyState:
+	mov [eaxRAM], eax
+	mov [ebxRAM], ebx
+	mov [ecxRAM], ecx
+	mov [edxRAM], edx
+	mov [espRAM], esp
+	ret
+
+eaxText: db "EAX: ", 0
+ebxText: db "EBX: ", 0
+ecxText: db "ECX: ", 0
+edxText: db "EDX: ", 0
+espText: db "ESP: ", 0
+instructionAddressText: db "'Timeframes are the best!' - MYCRAFTisbest", 0
+stackTraceText: db "STACK TRACE: ", 0
+
+extern print32Bit
+
+dumpState:
+	push DWORD 0Fh
+	push DWORD 1
+	push DWORD 0
+	mov eax, eaxText
+	push eax
+	call placeText
+	pop eax
+	pop eax
+	pop eax
+	pop eax
+	push DWORD 1
+	push DWORD 5
+	mov eax, [eaxRAM]
+	push eax
+	call print32Bit
+	pop eax
+	pop eax
+	pop eax
+	
+	push DWORD 0Fh
+	push DWORD 2
+	push DWORD 0
+	mov eax, ebxText
+	push eax
+	call placeText
+	pop eax
+	pop eax
+	pop eax
+	pop eax
+	push DWORD 2
+	push DWORD 5
+	mov eax, [ebxRAM]
+	push eax
+	call print32Bit
+	pop eax
+	pop eax
+	pop eax
+
+	push DWORD 0Fh
+	push DWORD 3
+	push DWORD 0
+	mov eax, ecxText
+	push eax
+	call placeText
+	pop eax
+	pop eax
+	pop eax
+	pop eax
+	push DWORD 3
+	push DWORD 5
+	mov eax, [ecxRAM]
+	push eax
+	call print32Bit
+	pop eax
+	pop eax
+	pop eax
+
+	push DWORD 0Fh
+	push DWORD 4
+	push DWORD 0
+	mov eax, edxText
+	push eax
+	call placeText
+	pop eax
+	pop eax
+	pop eax
+	pop eax
+	push DWORD 4
+	push DWORD 5
+	mov eax, [edxRAM]
+	push eax
+	call print32Bit
+	pop eax
+	pop eax
+	pop eax
+
+	push DWORD 0Fh
+	push DWORD 5
+	push DWORD 0
+	mov eax, espText
+	push eax
+	call placeText
+	pop eax
+	pop eax
+	pop eax
+	pop eax
+	push DWORD 5
+	push DWORD 5
+	mov eax, [espRAM]
+	push eax
+	call print32Bit
+	pop eax
+	pop eax
+	pop eax
+
+	push DWORD 0Fh
+	push DWORD 6
+	push DWORD 0
+	mov eax, instructionAddressText
+	push eax
+	call placeText
+	pop eax
+	pop eax
+	pop eax
+	pop eax
+
+	push DWORD 0Fh
+	push DWORD 8
+	push DWORD 0
+	mov eax, stackTraceText
+	push eax
+	call placeText
+	pop eax
+	pop eax
+	pop eax
+	pop eax
+	ret
  
 load_idt:
 	mov edx, [esp + 4]
