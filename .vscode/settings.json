@@ -2,5 +2,6 @@
     "files.associations": {
         "*.asm": "asm",
         "MAIN.C": "cpp"
-    }
+    },
+    "discord.enabled": false
 }
